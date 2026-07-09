@@ -541,6 +541,10 @@ export function AdminPage() {
         <AdminDetailModal
           biodata={viewBiodata}
           onClose={() => setViewBiodata(null)}
+          onEdit={() => {
+            setEditBiodata(viewBiodata);
+            setViewBiodata(null);
+          }}
         />
       )}
       {editBiodata && (
