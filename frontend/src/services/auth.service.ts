@@ -1,5 +1,5 @@
-import { api } from './api';
-import type { ApiResponse, User } from '../types';
+import { api } from "./api";
+import type { ApiResponse, User } from "../types";
 
 interface LoginPayload {
   email: string;
@@ -21,16 +21,16 @@ export const authService = {
    * Backend sets access_token + refresh_token as httpOnly cookies.
    * Only the user profile is returned in the response body.
    */
-  async login(payload: LoginPayload): Promise<LoginResponse> {
-    const { data } = await api.post<ApiResponse<LoginResponse>>('/auth/login', payload);
+  async login(payload: LoginPayload): Promise<User> {
+    const { data } = await api.post<ApiResponse<User>>("/auth/login", payload);
     return data.data;
   },
 
   /**
    * POST /auth/signup
    */
-  async signUp(email: string, password: string): Promise<SignUpResponse> {
-    const { data } = await api.post<ApiResponse<SignUpResponse>>('/auth/signup', {
+  async signUp(email: string, password: string): Promise<User> {
+    const { data } = await api.post<ApiResponse<User>>("/auth/signup", {
       email,
       password,
     });
@@ -43,7 +43,7 @@ export const authService = {
    * Can also be called manually if needed.
    */
   async refresh(): Promise<void> {
-    await api.post('/auth/refresh');
+    await api.post("/auth/refresh");
   },
 
   /**
@@ -51,7 +51,7 @@ export const authService = {
    * Backend clears httpOnly cookies and invalidates the refresh token hash.
    */
   async logout(): Promise<void> {
-    await api.post('/auth/logout');
+    await api.post("/auth/logout");
   },
 
   /**
@@ -60,7 +60,7 @@ export const authService = {
    * Returns the authenticated user profile.
    */
   async getProfile(): Promise<User> {
-    const { data } = await api.get<ApiResponse<User>>('/auth/profile');
+    const { data } = await api.get<ApiResponse<User>>("/auth/profile");
     return data.data;
   },
 };

@@ -28,9 +28,10 @@ export function LoginPage() {
 
   const mutation = useMutation({
     mutationFn: (values: FormData) => authService.login(values),
-    onSuccess: ({ user }) => {
+    onSuccess: (user) => {
       setUser(user);
       toast.success("Selamat datang kembali!");
+
       navigate({ to: user.role === "ADMIN" ? "/admin" : "/biodata" });
     },
     onError: (error) => toast.error(getErrorMessage(error)),

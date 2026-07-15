@@ -18,23 +18,26 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         if (await db.Biodatas.AnyAsync(b => b.UserId == userId))
             throw new InvalidOperationException("Biodata sudah ada");
 
-        await using var tx = await db.Database.BeginTransactionAsync();
-        try
-        {
-            var biodata = MapToEntity(req, userId);
-            db.Biodatas.Add(biodata);
-            await db.SaveChangesAsync();
+        var strategy = db.Database.CreateExecutionStrategy();
 
-            await SaveChildrenAsync(biodata.Id, req);
-            await tx.CommitAsync();
-
-            logger.LogInformation("JOB CREATE done: biodataId={Id}", biodata.Id);
-        }
-        catch
+        await strategy.ExecuteAsync(async () =>
         {
-            await tx.RollbackAsync();
-            throw;
-        }
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                var biodata = MapToEntity(req, userId);
+                db.Biodatas.Add(biodata);
+                await db.SaveChangesAsync();
+
+                await SaveChildrenAsync(biodata.Id, req);
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     // ── Update ────────────────────────────────────────────────────────────────
@@ -46,22 +49,27 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         var biodata = await db.Biodatas.FirstOrDefaultAsync(b => b.UserId == userId)
             ?? throw new KeyNotFoundException("Biodata tidak ditemukan");
 
-        await using var tx = await db.Database.BeginTransactionAsync();
-        try
-        {
-            ApplyUpdate(biodata, req);
-            await db.SaveChangesAsync();
+        var strategy = db.Database.CreateExecutionStrategy();
 
-            await ReplaceChildrenAsync(biodata.Id, req);
-            await tx.CommitAsync();
-
-            logger.LogInformation("JOB UPDATE done: biodataId={Id}", biodata.Id);
-        }
-        catch
+        await strategy.ExecuteAsync(async () =>
         {
-            await tx.RollbackAsync();
-            throw;
-        }
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                ApplyUpdate(biodata, req);
+                await db.SaveChangesAsync();
+
+                await ReplaceChildrenAsync(biodata.Id, req);
+                await tx.CommitAsync();
+
+                logger.LogInformation("JOB UPDATE done: biodataId={Id}", biodata.Id);
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     // ── Delete ────────────────────────────────────────────────────────────────
@@ -73,7 +81,7 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         var biodata = await db.Biodatas.FirstOrDefaultAsync(b => b.UserId == userId)
             ?? throw new KeyNotFoundException("Biodata tidak ditemukan");
 
-        biodata.DeletedAt = DateTime.UtcNow;
+        db.Biodatas.Remove(biodata);
         await db.SaveChangesAsync();
 
         logger.LogInformation("JOB DELETE done: biodataId={Id}", biodata.Id);
@@ -88,22 +96,27 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         var biodata = await db.Biodatas.FirstOrDefaultAsync(b => b.Id == biodataId)
             ?? throw new KeyNotFoundException($"Biodata {biodataId} tidak ditemukan");
 
-        await using var tx = await db.Database.BeginTransactionAsync();
-        try
-        {
-            ApplyUpdate(biodata, req);
-            await db.SaveChangesAsync();
+        var strategy = db.Database.CreateExecutionStrategy();
 
-            await ReplaceChildrenAsync(biodataId, req);
-            await tx.CommitAsync();
-
-            logger.LogInformation("JOB ADMIN_UPDATE done: biodataId={Id}", biodataId);
-        }
-        catch
+        await strategy.ExecuteAsync(async () =>
         {
-            await tx.RollbackAsync();
-            throw;
-        }
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                ApplyUpdate(biodata, req);
+                await db.SaveChangesAsync();
+
+                await ReplaceChildrenAsync(biodata.Id, req);
+                await tx.CommitAsync();
+
+                logger.LogInformation("JOB UPDATE done: biodataId={Id}", biodata.Id);
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     // ── Admin Delete ──────────────────────────────────────────────────────────
@@ -111,12 +124,11 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
     public async Task HandleAdminDeleteAsync(string biodataId)
     {
         logger.LogInformation("JOB ADMIN_DELETE: biodataId={Id}", biodataId);
-
         var biodata = await db.Biodatas.IgnoreQueryFilters()
             .FirstOrDefaultAsync(b => b.Id == biodataId)
             ?? throw new KeyNotFoundException($"Biodata {biodataId} tidak ditemukan");
 
-        biodata.DeletedAt = DateTime.UtcNow;
+        db.Biodatas.Remove(biodata);
         await db.SaveChangesAsync();
 
         logger.LogInformation("JOB ADMIN_DELETE done: biodataId={Id}", biodataId);
@@ -126,47 +138,47 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
 
     private static Biodata MapToEntity(BiodataRequest r, string userId) => new()
     {
-        Id              = Guid.NewGuid().ToString(),
-        UserId          = userId,
+        Id = Guid.NewGuid().ToString(),
+        UserId = userId,
         AppliedPosition = r.AppliedPosition,
-        FullName        = r.FullName,
+        FullName = r.FullName,
         NationalIdNumber = r.NationalIdNumber,
-        BirthPlace      = r.BirthPlace,
-        BirthDate       = DateOnly.Parse(r.BirthDate),
-        Gender          = r.Gender,
-        Religion        = r.Religion,
-        BloodType       = r.BloodType,
-        MaritalStatus   = r.MaritalStatus,
-        KtpAddress      = r.KtpAddress,
-        CurrentAddress  = r.CurrentAddress,
-        Email           = r.Email,
-        PhoneNumber     = r.PhoneNumber,
+        BirthPlace = r.BirthPlace,
+        BirthDate = DateOnly.Parse(r.BirthDate),
+        Gender = r.Gender,
+        Religion = r.Religion,
+        BloodType = r.BloodType,
+        MaritalStatus = r.MaritalStatus,
+        KtpAddress = r.KtpAddress,
+        CurrentAddress = r.CurrentAddress,
+        Email = r.Email,
+        PhoneNumber = r.PhoneNumber,
         EmergencyContact = r.EmergencyContact,
-        Skills          = r.Skills,
+        Skills = r.Skills,
         WillingToBePlaced = r.WillingToBePlaced,
-        ExpectedSalary  = r.ExpectedSalary,
+        ExpectedSalary = r.ExpectedSalary,
     };
 
     private static void ApplyUpdate(Biodata b, BiodataRequest r)
     {
         b.AppliedPosition = r.AppliedPosition;
-        b.FullName        = r.FullName;
+        b.FullName = r.FullName;
         b.NationalIdNumber = r.NationalIdNumber;
-        b.BirthPlace      = r.BirthPlace;
-        b.BirthDate       = DateOnly.Parse(r.BirthDate);
-        b.Gender          = r.Gender;
-        b.Religion        = r.Religion;
-        b.BloodType       = r.BloodType;
-        b.MaritalStatus   = r.MaritalStatus;
-        b.KtpAddress      = r.KtpAddress;
-        b.CurrentAddress  = r.CurrentAddress;
-        b.Email           = r.Email;
-        b.PhoneNumber     = r.PhoneNumber;
+        b.BirthPlace = r.BirthPlace;
+        b.BirthDate = DateOnly.Parse(r.BirthDate);
+        b.Gender = r.Gender;
+        b.Religion = r.Religion;
+        b.BloodType = r.BloodType;
+        b.MaritalStatus = r.MaritalStatus;
+        b.KtpAddress = r.KtpAddress;
+        b.CurrentAddress = r.CurrentAddress;
+        b.Email = r.Email;
+        b.PhoneNumber = r.PhoneNumber;
         b.EmergencyContact = r.EmergencyContact;
-        b.Skills          = r.Skills;
+        b.Skills = r.Skills;
         b.WillingToBePlaced = r.WillingToBePlaced;
-        b.ExpectedSalary  = r.ExpectedSalary;
-        b.UpdatedAt       = DateTime.UtcNow;
+        b.ExpectedSalary = r.ExpectedSalary;
+        b.UpdatedAt = DateTime.UtcNow;
     }
 
     private async Task SaveChildrenAsync(string biodataId, BiodataRequest req)
@@ -175,14 +187,14 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         {
             var entities = req.EducationHistories.Select(e => new EducationHistory
             {
-                Id          = Guid.NewGuid().ToString(),
-                BiodataId   = biodataId,
+                Id = Guid.NewGuid().ToString(),
+                BiodataId = biodataId,
                 Institution = e.Institution,
-                Major       = e.Major,
-                Degree      = e.Degree,
-                StartYear   = e.StartYear,
-                EndYear     = e.EndYear,
-                Gpa         = e.Gpa,
+                Major = e.Major,
+                Degree = e.Degree,
+                StartYear = e.StartYear,
+                EndYear = e.EndYear,
+                Gpa = e.Gpa,
             });
             await db.EducationHistories.AddRangeAsync(entities);
         }
@@ -191,12 +203,12 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         {
             var entities = req.TrainingHistories.Select(t => new TrainingHistory
             {
-                Id          = Guid.NewGuid().ToString(),
-                BiodataId   = biodataId,
-                Name        = t.Name,
-                Organizer   = t.Organizer,
-                Year        = t.Year,
-                Duration    = t.Duration,
+                Id = Guid.NewGuid().ToString(),
+                BiodataId = biodataId,
+                Name = t.Name,
+                Organizer = t.Organizer,
+                Year = t.Year,
+                Duration = t.Duration,
                 Certificate = t.Certificate,
             });
             await db.TrainingHistories.AddRangeAsync(entities);
@@ -206,13 +218,13 @@ public class BiodataJobHandler(AppDbContext db, ILogger<BiodataJobHandler> logge
         {
             var entities = req.EmploymentHistories.Select(e => new EmploymentHistory
             {
-                Id          = Guid.NewGuid().ToString(),
-                BiodataId   = biodataId,
-                Company     = e.Company,
-                Position    = e.Position,
-                StartDate   = DateOnly.Parse(e.StartDate),
-                EndDate     = string.IsNullOrEmpty(e.EndDate) ? null : DateOnly.Parse(e.EndDate),
-                Salary      = e.Salary,
+                Id = Guid.NewGuid().ToString(),
+                BiodataId = biodataId,
+                Company = e.Company,
+                Position = e.Position,
+                StartDate = DateOnly.Parse(e.StartDate),
+                EndDate = string.IsNullOrEmpty(e.EndDate) ? null : DateOnly.Parse(e.EndDate),
+                Salary = e.Salary,
                 Description = e.Description,
             });
             await db.EmploymentHistories.AddRangeAsync(entities);
