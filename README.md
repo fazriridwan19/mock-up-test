@@ -9,6 +9,7 @@ A full-stack web application for managing employee biodata, built with NestJS, R
 | Layer | Technology |
 |---|---|
 | Backend | NestJS · TypeORM · MySQL · BullMQ · Redis · JWT (httpOnly cookie) |
+| BackendNet | ASP.NET · Entity Framework Core 8 · MySQL · HangFire · Redis · JWT (httpOnly cookie) |
 | Frontend | React · Vite · TanStack Router · TanStack Query · Tailwind CSS · Framer Motion |
 | Queue | BullMQ (Redis-backed async job processing) |
 | Database | MySQL 8 |
@@ -36,6 +37,7 @@ Make sure the following are installed on your machine before proceeding.
 ```
 mock-up-test/
 ├── backend/          # NestJS API server
+├── BackendNet/       # ASP.NET API server
 ├── frontend/         # React + Vite SPA
 ├── database/         # SQL DDL migration files (auto-loaded by Docker)
 ├── docker-compose.yml
@@ -237,7 +239,7 @@ UPDATE users SET role = 'ADMIN' WHERE email = 'your@email.com';
 
 ### Backend (`.env`)
 
-| Variable | Required | Default | Description **|**
+| Variable | Required | Default | Description |
 |---|---|---|---|
 | `APP_PORT` | No | `3000` | HTTP port the server listens on |
 | `APP_ENV` | No | `development` | Set to `production` to disable TypeORM sync |
@@ -285,3 +287,106 @@ Ensure `VITE_API_BASE_URL` in `frontend/.env` matches the URL the backend is act
 
 **TypeORM sync error on startup**  
 If you see column-not-found errors, the migration files may not have run yet. Execute `./database/*.sql` files against your MySQL instance in numerical order.
+
+---
+
+## Backend (.NET Alternative) — `BackendNet/`
+
+A full feature-equivalent ASP.NET Core 8 port of the NestJS backend, located in `BackendNet/`.
+
+### Tech Stack (.NET)
+
+| Component | Technology |
+|---|---|
+| Framework | ASP.NET Core 8 Web API |
+| ORM | Entity Framework Core 8 + Pomelo MySQL |
+| Auth | JWT via `Microsoft.AspNetCore.Authentication.JwtBearer` (httpOnly cookie) |
+| Async jobs | Hangfire + `Hangfire.Redis.StackExchange` |
+| Password hashing | BCrypt.Net-Next (cost 12 for passwords, 10 for refresh tokens) |
+| API docs | Swagger / Swashbuckle at `/api/docs` |
+| Job dashboard | Hangfire at `/api/hangfire` (localhost-only) |
+
+### Project Structure
+
+```
+BackendNet/
+    ├── Controllers/          # AuthController, BiodataController, AdminController
+    ├── Application/
+    │   ├── DTOs/             # Request/response record types
+    │   ├── Common/           # ApiResponse envelope, BiodataMapper
+    │   └── Services/         # AuthService, BiodataService, BiodataJobHandler
+    ├── Domain/
+    │   ├── Enums.cs          # UserRole, Gender, Religion, BloodType, MaritalStatus, Degree
+    │   └── Entities/         # User, Biodata, EducationHistory, TrainingHistory, EmploymentHistory
+    ├── Infrastructure/
+    │   ├── AppDbContext.cs   # EF Core DbContext with query filters + enum conversions
+    │   ├── CookieHelper.cs   # httpOnly cookie option factories
+    │   └── Middleware/       # ExceptionMiddleware (global error handler)
+    ├── Program.cs            # App bootstrap, DI registration, middleware pipeline
+    ├── appsettings.json      # Default configuration
+    └── Dockerfile
+```
+
+### Running Locally
+
+#### Prerequisites
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8)
+- MySQL 8 and Redis running (use `docker compose up -d mysql redis` from the project root)
+
+#### Steps
+
+```bash
+cd backend-net/BackendNet
+
+# (Optional) override settings via environment variables — see .env.example
+cp .env.example .env   # for reference only; ASP.NET reads env vars directly
+
+# Run in development mode (auto-migrates DB on startup)
+dotnet run
+```
+
+The API will be available at `http://localhost:5000/api`.  
+Swagger UI: `http://localhost:5000/api/docs`  
+Hangfire dashboard: `http://localhost:5000/api/hangfire`
+
+#### Build for production
+
+```bash
+dotnet publish -c Release -o ./publish
+dotnet ./publish/BackendNet.dll
+```
+
+### Configuration
+
+ASP.NET Core reads config from `appsettings.json` and overrides via environment variables using the `Section__Key` convention:
+
+| Environment variable | Description |
+|---|---|
+| `Jwt__AccessSecret` | JWT access token signing secret |
+| `Jwt__RefreshSecret` | JWT refresh token signing secret (must differ) |
+| `Jwt__AccessExpiresIn` | Access token TTL (e.g. `15m`) |
+| `Jwt__RefreshExpiresIn` | Refresh token TTL (e.g. `7d`) |
+| `ConnectionStrings__Default` | MySQL connection string |
+| `Redis__Connection` | Redis connection string (e.g. `localhost:6379`) |
+| `ASPNETCORE_ENVIRONMENT` | `Development` or `Production` |
+| `ASPNETCORE_URLS` | Listening URL (e.g. `http://+:5000`) |
+
+### API Parity with NestJS Backend
+
+Both backends expose **identical API contracts** — same routes, same HTTP status codes, same JSON response envelope — so the React frontend works with either one. Just change `VITE_API_BASE_URL` in `frontend/.env`:
+
+```dotenv
+# NestJS (port 3000)
+VITE_API_BASE_URL=http://localhost:3000
+
+# .NET (port 5000)
+VITE_API_BASE_URL=http://localhost:5000
+```
+
+### Architecture Notes (.NET)
+
+- **Authentication** mirrors the NestJS implementation exactly: dual JWT secrets, tokens in `httpOnly` cookies, refresh token hash stored in DB with bcrypt (cost 10), rotation on every refresh, reuse detection nullifies the hash.
+- **Async mutations** use **Hangfire** (backed by Redis) instead of BullMQ. The controller enqueues a job and immediately returns HTTP 202 + `jobId`. The frontend polls `GET /api/biodata/jobs/:jobId` or `GET /api/admin/jobs/:jobId` for status — same polling contract as the NestJS version.
+- **Soft deletes** are implemented via `DeletedAt` nullable timestamp + EF Core global query filters (equivalent to TypeORM's `@DeleteDateColumn`).
+- **DB migrations** run automatically on startup in Development. For Production, run migrations explicitly: `dotnet ef database update`.
